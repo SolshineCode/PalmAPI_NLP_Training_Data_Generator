@@ -1,0 +1,87 @@
+import requests
+import pandas as pd
+import spacy
+import stanza
+
+class PalmAPIPlugin:
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def translate(self, text, target_language):
+        url = "https://developers.generative.ai/endpoints/translate"
+        headers = {
+            "Authorization": "Bearer " + self.api_key,
+            "Content-Type": "application/json",
+        }
+        data = {"text": text, "target": target_language}
+        response = requests.post(url, headers=headers, json=data)
+
+        try:
+            response.raise_for_status()
+            translated_text = response.json()["translated_text"]
+            return translated_text
+        except requests.exceptions.HTTPError as e:
+            print("Error translating text:", e.response.status_code, e.response.text)
+            return None
+
+def generate_sentence_pairs(api_plugin):
+    # Generate 100,000 unique English sentences
+    english_sentences = []
+    for _ in range(100000):
+        try:
+            english_sentence = api_plugin.text("Generate a unique English sentence.")
+        except Exception as e:
+            print("Error generating English sentence:", e)
+            continue
+
+        if english_sentence not in english_sentences:
+            english_sentences.append(english_sentence)
+
+    # Translate each English sentence to Portuguese
+    portuguese_sentences = []
+    for english_sentence in english_sentences:
+        try:
+            portuguese_sentence = api_plugin.translate(english_sentence, "pt")
+        except Exception as e:
+            print("Error translating English sentence to Portuguese:", e)
+            continue
+
+        portuguese_sentences.append(portuguese_sentence)
+
+    # Annotate sentences with NER, SRL, dependency parsing, and POS tagging
+    annotated_sentence_pairs = []
+    for english_sentence, portuguese_sentence in zip(english_sentences, portuguese_sentences):
+        # Perform NER annotation using spaCy
+        try:
+            nlp = spacy.load("en_core_web_sm")
+            english_doc = nlp(english_sentence)
+            portuguese_doc = nlp(portuguese_sentence)
+        except Exception as e:
+            print("Error performing NER annotation:", e)
+            continue
+
+        # Extract NER annotations
+        english_ner_annotations = []
+        portuguese_ner_annotations = []
+        for token in english_doc:
+            english_ner_annotations.append((token.text, token.ent_type_))
+        for token in portuguese_doc:
+            portuguese_ner_annotations.append((token.text, token.ent_type_))
+
+        # Perform SRL annotation using Stanza
+        try:
+            stanza.download_models('en')
+            stanza.download_models('pt')
+            nlp_en = stanza.Pipeline('en')
+            nlp_pt = stanza.Pipeline('pt')
+
+            english_srl_annotations = nlp_en(english_sentence).sentences[0].parse_srl()
+            portuguese_srl_annotations = nlp_pt(portuguese_sentence).sentences[0].parse_srl()
+        except Exception as e:
+            print("Error performing SRL annotation:", e)
+            continue
+
+        # Validate SRL annotations: check for valid roles and arguments
+        if not validate_srl_annotations(english_srl_annotations) or not validate_srl_annotations(portuguese_srl_annotations):
+            print("Invalid SRL annotations for sentence pair: " , english_sentence, portuguese_sentence)
+
